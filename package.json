@@ -4,7 +4,8 @@
   "description": "A single endpoint to do calculations",
   "main": "index.ts",
   "scripts": {
-    "test": "test"
+    "test": "test",
+    "dev": "tsx index.ts"
   },
   "author": "tomi-mercado",
   "license": "MIT",
