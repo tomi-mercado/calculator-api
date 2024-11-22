@@ -158,7 +158,7 @@ const resolveExpression = (expression: string[]) => {
   return result;
 };
 
-const getMoreInnerExpression = (expressions: string[]) => {
+const getMoreInnerExpression = (expressions: string[]): string => {
   if (!includesParenthesis(expressions.join(""))) {
     return expressions.join("");
   }

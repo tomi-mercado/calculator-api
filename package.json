@@ -5,7 +5,9 @@
   "main": "index.ts",
   "scripts": {
     "test": "vitest",
-    "dev": "tsx --watch src/index.ts"
+    "dev": "tsx --watch src/index.ts",
+    "build": "tsc",
+    "start": "node build/index.js"
   },
   "author": "tomi-mercado",
   "license": "MIT",
