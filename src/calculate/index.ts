@@ -14,36 +14,19 @@ const parseOperation = (operation: string) => {
   return operation.trim().replaceAll(" ", "");
 };
 
-const haveValidOperation = (operation: string) => {
-  let chars = operation.split("");
+const haveValidExpressions = (expressions: string[]) => {
+  const numbersAmount = expressions.filter(
+    (expression) => numberSchema.safeParse(expression).success
+  ).length;
+  const operationsAmount = expressions.filter(
+    (expression) => operationSchema.safeParse(expression).success
+  ).length;
 
-  for (const char of chars) {
-    if (!operationSchema.safeParse(char).success) {
-      continue;
-    }
-
-    return true;
+  if (operationsAmount > 0) {
+    return numbersAmount >= 2;
   }
 
-  return false;
-};
-
-const MIN_NUMBERS = 2;
-const haveValidNumbers = (operation: string) => {
-  const chars = operation.split("");
-
-  let numbers = 0;
-  for (const char of chars) {
-    if (numberSchema.safeParse(char).success) {
-      numbers++;
-    }
-
-    if (numbers >= MIN_NUMBERS) {
-      return true;
-    }
-  }
-
-  return false;
+  return numbersAmount === 1;
 };
 
 const includesParenthesis = (operation: string) => {
@@ -69,7 +52,12 @@ const separateExpressions = (operation: string) => {
         expressions.push(currentNumber);
       }
 
-      // Since this should be previously validated, we can assume that char is an operation
+      const operationParseResult = operationSchema.safeParse(char);
+
+      if (!operationParseResult.success && char !== "(" && char !== ")") {
+        throw new Error(`Invalid operation: ${char}`);
+      }
+
       expressions.push(char);
       currentNumber = "";
     }
@@ -94,36 +82,78 @@ const removeInitialAndFinalParenthesis = (expression: string) => {
 };
 
 const resolveExpression = (expression: string[]) => {
-  let result = 0;
+  // First pass - handle multiplication and division
+  const intermediateResults: number[] = [];
   let currentOperation = "+";
+  let currentNumber: number | null = null;
 
   for (const char of expression) {
-    if (operationSchema.safeParse(char).success) {
+    const numberParseResult = numberSchema.safeParse(char);
+    const operationParseResult = operationSchema.safeParse(char);
+
+    // If it's an operation, we store the current number if exists, and update the current operation
+    if (operationParseResult.success) {
       currentOperation = char;
+
+      if (currentNumber === null) {
+        continue;
+      }
+
+      intermediateResults.push(currentNumber);
+      currentNumber = null;
       continue;
     }
 
-    const number = numberSchema.safeParse(char).data;
+    // The char is not an operation, also it's not a number. Something is wrong here, so we need to throw.
+    if (!numberParseResult.success) {
+      throw new Error(`Invalid number: ${char}`);
+    }
 
-    if (!number) {
+    const number = numberParseResult.data;
+
+    const isMultiplication = currentOperation === "*";
+    const isDivision = currentOperation === "/";
+
+    // If it's not a multiplication or division, we store the current number and continue
+    if (!isMultiplication && !isDivision) {
+      if (currentNumber !== null) {
+        intermediateResults.push(currentNumber);
+      }
+
+      currentNumber = number;
+
       continue;
     }
 
-    switch (currentOperation) {
-      case "+":
-        result += number;
-        break;
-      case "-":
-        result -= number;
-        break;
-      case "*":
-        result *= number;
-        break;
-      case "/":
-        result /= number;
-        break;
+    // If it's a multiplication or division, we need to calculate the result with the current number, using the saved operation
+    if (currentNumber === null) {
+      currentNumber = intermediateResults.pop() ?? null;
     }
+
+    // If there's no current number, we continue to the next iteration
+    if (!currentNumber) {
+      continue;
+    }
+
+    // We need to multiplie or divide the number that we have from a previous non multiplication or division, or the last intermediate result with the number that the current char represents
+    currentNumber =
+      currentOperation === "*"
+        ? currentNumber * number
+        : currentNumber / number;
   }
+
+  if (currentNumber !== null) {
+    intermediateResults.push(currentNumber);
+  }
+
+  // Second pass - handle addition and subtraction
+  const sumAndSubOperations = expression.filter(
+    (char) => char === "+" || char === "-"
+  );
+  const result = intermediateResults.reduce((acc, number, index) => {
+    const currentOperation = sumAndSubOperations[index - 1] || "+";
+    return currentOperation === "+" ? acc + number : acc - number;
+  }, 0);
 
   return result;
 };
@@ -150,6 +180,12 @@ const getMoreInnerExpression = (expressions: string[]) => {
     }
   }
 
+  if (parenthesis !== 0) {
+    throw new Error(
+      `Invalid operation. Check your parenthesis: ${expressions.join("")}`
+    );
+  }
+
   if (includesParenthesis(innerExpression)) {
     return getMoreInnerExpression(
       separateExpressions(removeInitialAndFinalParenthesis(innerExpression))
@@ -159,20 +195,34 @@ const getMoreInnerExpression = (expressions: string[]) => {
   return innerExpression;
 };
 
-export const calculate = (operation: string) => {
-  if (!haveValidOperation(operation)) {
-    throw new Error("Invalid operation");
-  }
-
-  if (!haveValidNumbers(operation)) {
-    throw new Error("Invalid numbers");
-  }
-
+export const calculate = (operation: string): number => {
   const parsedOperation = parseOperation(operation);
+
+  if (parsedOperation === "") {
+    return 0;
+  }
+
   const expressions = separateExpressions(parsedOperation);
 
-  let moreInnerExpression = getMoreInnerExpression(expressions);
-  let result = resolveExpression(separateExpressions(moreInnerExpression));
+  if (!haveValidExpressions(expressions)) {
+    throw new Error(
+      `Invalid operation: ${operation}. At least 2 numbers are required to operate if an operator is present. Send a single number to calculate its value.`
+    );
+  }
 
-  return result;
+  if (!includesParenthesis(parsedOperation)) {
+    return resolveExpression(expressions);
+  }
+
+  const innerExpression = getMoreInnerExpression(expressions);
+  const innerExpressionResult = resolveExpression(
+    separateExpressions(innerExpression)
+  );
+
+  const newOperation = parsedOperation.replace(
+    `(${innerExpression})`,
+    innerExpressionResult.toString()
+  );
+
+  return calculate(newOperation);
 };
